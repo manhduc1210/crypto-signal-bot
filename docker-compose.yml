@@ -1,0 +1,9 @@
+services:
+  signals:
+    build: .
+    # env_file: 
+    #   - .env
+    volumes:
+      - ./:/app
+    restart: unless-stopped
+    command: ["python","-m","app.ingest"]

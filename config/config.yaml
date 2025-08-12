@@ -1,0 +1,9 @@
+project: { name: crypto-signal-bot, version: 0.1.0 }
+exchange: { name: binance, market_type: usdt_perp, symbols: ["BTCUSDT","ETHUSDT"] }
+timeframes:
+  - { tf: M15, adx_trend_threshold: 18, score_threshold: 70, cooldown_n_bars: 1, min_zone_touches: 2, zone_buffer_atr_mult: 0.2 }
+  - { tf: H1,  adx_trend_threshold: 20, score_threshold: 72, cooldown_n_bars: 2, min_zone_touches: 2, zone_buffer_atr_mult: 0.2 }
+  - { tf: H4,  adx_trend_threshold: 22, score_threshold: 75, cooldown_n_bars: 1, min_zone_touches: 3, zone_buffer_atr_mult: 0.25 }
+  - { tf: D1,  adx_trend_threshold: 22, score_threshold: 78, cooldown_n_bars: 0, min_zone_touches: 3, zone_buffer_atr_mult: 0.3 }
+  - { tf: W1,  adx_trend_threshold: 25, score_threshold: 80, cooldown_n_bars: 0, min_zone_touches: 4, zone_buffer_atr_mult: 0.35 }
+alerts: { enable_telegram: false, enable_webhook: false }
