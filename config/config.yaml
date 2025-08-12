@@ -6,4 +6,9 @@ timeframes:
   - { tf: H4,  adx_trend_threshold: 22, score_threshold: 75, cooldown_n_bars: 1, min_zone_touches: 3, zone_buffer_atr_mult: 0.25 }
   - { tf: D1,  adx_trend_threshold: 22, score_threshold: 78, cooldown_n_bars: 0, min_zone_touches: 3, zone_buffer_atr_mult: 0.3 }
   - { tf: W1,  adx_trend_threshold: 25, score_threshold: 80, cooldown_n_bars: 0, min_zone_touches: 4, zone_buffer_atr_mult: 0.35 }
-alerts: { enable_telegram: false, enable_webhook: false }
+alerts:
+  enable_telegram: false
+  enable_webhook: false
+  telegram_chat_id: "${TELEGRAM_CHAT_ID}"
+  telegram_token: "${TELEGRAM_TOKEN}"
+  webhook_url: "${WEBHOOK_URL}"

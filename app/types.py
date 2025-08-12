@@ -1,20 +1,21 @@
 from dataclasses import dataclass
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Optional, Tuple
 
-TFDirection = Literal["LONG","SHORT","NEUTRAL"]
+TF = Literal["M15","H1","H4","D1","W1"]
+Direction = Literal["LONG","SHORT","NEUTRAL"]
 Regime = Literal["trend_bull","trend_bear","range"]
 
 @dataclass
 class TfSignal:
     symbol: str
-    timeframe: str
-    closed_at: int  # ms epoch (TF t_close)
-    trend_regime: Regime
-    signal: TFDirection
+    timeframe: TF
+    closed_at: int
+    regime: Regime
+    signal: Direction
     score: int
     price: float
     indicators: Dict[str, float]
-    sr: Dict
+    sr: Dict[str, Optional[Tuple[float,float]]]
     entry_hint: float
     sl_hint: float
     tp_hint: float

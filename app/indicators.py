@@ -1,61 +1,54 @@
-from dataclasses import dataclass
-from typing import Dict, List, Tuple
 import pandas as pd
 import pandas_ta as ta
 
-@dataclass
 class IndicatorParams:
-    ema_fast: int = 50
-    ema_slow: int = 200
-    rsi_length: int = 14
-    macd_fast: int = 12
-    macd_slow: int = 26
-    macd_signal: int = 9
-    bb_length: int = 20
-    bb_std: float = 2.0
-    atr_length: int = 14
-    adx_length: int = 14
-
-class SeriesBuffer:
-    """Keep recent closed candles per (symbol, tf) and build DataFrame for indicators."""
-    def __init__(self, maxlen:int=2000):
-        self.maxlen = maxlen
-        self.store: Dict[Tuple[str,str], Dict[str, List[float]]] = {}
-
-    def append(self, symbol:str, tf:str, o:float, h:float, l:float, c:float, v:float):
-        key = (symbol.upper(), tf.upper())
-        slot = self.store.setdefault(key, {"open":[], "high":[], "low":[], "close":[], "volume":[]})
-        for k,val in zip(["open","high","low","close","volume"], [o,h,l,c,v]):
-            slot[k].append(val)
-            if len(slot[k]) > self.maxlen:
-                slot[k].pop(0)
-
-    def get_df(self, symbol:str, tf:str) -> pd.DataFrame:
-        key = (symbol.upper(), tf.upper())
-        slot = self.store.get(key, None)
-        if not slot or len(slot.get("close",[])) < 5:
-            return pd.DataFrame(columns=["open","high","low","close","volume"])
-        df = pd.DataFrame(slot)
-        return df
+    def __init__(self, cfg: dict):
+        self.ema_fast = cfg.get("ema_fast", 50)
+        self.ema_slow = cfg.get("ema_slow", 200)
+        self.rsi_len = cfg.get("rsi_length", 14)
+        self.macd_fast = cfg.get("macd_fast", 12)
+        self.macd_slow = cfg.get("macd_slow", 26)
+        self.macd_signal = cfg.get("macd_signal", 9)
+        self.bb_len = cfg.get("bb_length", 20)
+        self.bb_std = cfg.get("bb_std", 2)
+        self.atr_len = cfg.get("atr_length", 14)
+        self.adx_len = cfg.get("adx_length", 14)
 
 def compute_features(df: pd.DataFrame, p: IndicatorParams) -> pd.DataFrame:
-    if df.empty:
-        return df
     out = df.copy()
     out["ema_fast"] = ta.ema(out["close"], length=p.ema_fast)
     out["ema_slow"] = ta.ema(out["close"], length=p.ema_slow)
-    out["rsi"] = ta.rsi(out["close"], length=p.rsi_length)
+    out["rsi"] = ta.rsi(out["close"], length=p.rsi_len)
     macd = ta.macd(out["close"], fast=p.macd_fast, slow=p.macd_slow, signal=p.macd_signal)
-    out = out.join(macd)
-    bb = ta.bbands(out["close"], length=p.bb_length, std=p.bb_std)
-    out = out.join(bb)
-    out["atr"] = ta.atr(out["high"], out["low"], out["close"], length=p.atr_length)
-    adx = ta.adx(out["high"], out["low"], out["close"], length=p.adx_length)
-    out["adx"] = adx[f"ADX_{p.adx_length}"]
-    # bb width
-    if all(col in out for col in ["BBU_20_2.0","BBL_20_2.0"]):
-        out["bb_width"] = (out["BBU_20_2.0"] - out["BBL_20_2.0"]) / out["close"]
-    else:
-        out["bb_width"] = None
-    # regime flags will be decided in signal engine using thresholds from config
+    if macd is not None:
+        out = out.join(macd)
+    bb = ta.bbands(out["close"], length=p.bb_len, std=p.bb_std)
+    if bb is not None:
+        out = out.join(bb)
+        out["bb_width"] = (out["BBU_"+str(p.bb_len)+"_"+str(p.bb_std)] - out["BBL_"+str(p.bb_len)+"_"+str(p.bb_std)]) / out["close"]
+    out["atr"] = ta.atr(out["high"], out["low"], out["close"], length=p.atr_len)
+    adx = ta.adx(out["high"], out["low"], out["close"], length=p.adx_len)
+    if adx is not None:
+        out["adx"] = adx["ADX_"+str(p.adx_len)]
+    # regime flags
+    out["trend_bull"] = (out["ema_fast"] > out["ema_slow"]) & (out["adx"] > 0)
+    out["trend_bear"] = (out["ema_fast"] < out["ema_slow"]) & (out["adx"] > 0)
     return out
+
+class SeriesBuffer:
+    def __init__(self):
+        self.store = {}  # (symbol, tf) -> list[dict]
+    def append(self, symbol: str, tf: str, t_close: int, o: float, h: float, l: float, c: float, v: float):
+        key = (symbol.upper(), tf.upper())
+        self.store.setdefault(key, []).append({"t": t_close, "open": o, "high": h, "low": l, "close": c, "volume": v})
+        # limit size
+        if len(self.store[key]) > 5000:
+            self.store[key] = self.store[key][-4000:]
+    def df(self, symbol: str, tf: str) -> pd.DataFrame:
+        key = (symbol.upper(), tf.upper())
+        arr = self.store.get(key, [])
+        if not arr:
+            return pd.DataFrame(columns=["t","open","high","low","close","volume"]).set_index("t")
+        df = pd.DataFrame(arr)
+        df = df.set_index("t")
+        return df
