@@ -1,6 +1,5 @@
-from dataclasses import dataclass, field
-from typing import Dict, Tuple, List
-from collections import deque
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
 import pandas as pd
 import pandas_ta as ta
 
@@ -17,42 +16,46 @@ class IndicatorParams:
     atr_length: int = 14
     adx_length: int = 14
 
-def compute_features(df: pd.DataFrame, p: IndicatorParams) -> pd.DataFrame:
-    out = df.copy()
-    out['ema_fast'] = ta.ema(out['close'], length=p.ema_fast)
-    out['ema_slow'] = ta.ema(out['close'], length=p.ema_slow)
-    out['rsi'] = ta.rsi(out['close'], length=p.rsi_length)
-    macd = ta.macd(out['close'], fast=p.macd_fast, slow=p.macd_slow, signal=p.macd_signal)
-    if macd is not None and not macd.empty:
-        out = out.join(macd)
-    bb = ta.bbands(out['close'], length=p.bb_length, std=p.bb_std)
-    if bb is not None and not bb.empty:
-        out = out.join(bb)
-    out['atr'] = ta.atr(out['high'], out['low'], out['close'], length=p.atr_length)
-    adx = ta.adx(out['high'], out['low'], out['close'], length=p.adx_length)
-    if adx is not None and not adx.empty:
-        out = out.join(adx['ADX_'+str(p.adx_length)].rename('adx'))
-    out['trend_bull'] = (out['ema_fast'] > out['ema_slow']) & (out['adx'] > 20)
-    out['trend_bear'] = (out['ema_fast'] < out['ema_slow']) & (out['adx'] > 20)
-    return out
-
-@dataclass
 class SeriesBuffer:
-    limit: int = 2000
-    store: Dict[Tuple[str,str], deque] = field(default_factory=dict)
+    """Keep recent closed candles per (symbol, tf) and build DataFrame for indicators."""
+    def __init__(self, maxlen:int=2000):
+        self.maxlen = maxlen
+        self.store: Dict[Tuple[str,str], Dict[str, List[float]]] = {}
 
-    def append(self, symbol: str, tf: str, candle_dict: Dict):
+    def append(self, symbol:str, tf:str, o:float, h:float, l:float, c:float, v:float):
         key = (symbol.upper(), tf.upper())
-        if key not in self.store:
-            self.store[key] = deque(maxlen=self.limit)
-        self.store[key].append(candle_dict)
+        slot = self.store.setdefault(key, {"open":[], "high":[], "low":[], "close":[], "volume":[]})
+        for k,val in zip(["open","high","low","close","volume"], [o,h,l,c,v]):
+            slot[k].append(val)
+            if len(slot[k]) > self.maxlen:
+                slot[k].pop(0)
 
-    def to_df(self, symbol: str, tf: str) -> pd.DataFrame:
+    def get_df(self, symbol:str, tf:str) -> pd.DataFrame:
         key = (symbol.upper(), tf.upper())
-        arr = list(self.store.get(key, []))
-        if not arr:
-            return pd.DataFrame(columns=['ts','open','high','low','close','volume'])
-        df = pd.DataFrame(arr)
-        df = df.sort_values('t_close')
-        df = df.rename(columns={'o':'open','h':'high','l':'low','c':'close','v':'volume','t_close':'ts'})
+        slot = self.store.get(key, None)
+        if not slot or len(slot.get("close",[])) < 5:
+            return pd.DataFrame(columns=["open","high","low","close","volume"])
+        df = pd.DataFrame(slot)
         return df
+
+def compute_features(df: pd.DataFrame, p: IndicatorParams) -> pd.DataFrame:
+    if df.empty:
+        return df
+    out = df.copy()
+    out["ema_fast"] = ta.ema(out["close"], length=p.ema_fast)
+    out["ema_slow"] = ta.ema(out["close"], length=p.ema_slow)
+    out["rsi"] = ta.rsi(out["close"], length=p.rsi_length)
+    macd = ta.macd(out["close"], fast=p.macd_fast, slow=p.macd_slow, signal=p.macd_signal)
+    out = out.join(macd)
+    bb = ta.bbands(out["close"], length=p.bb_length, std=p.bb_std)
+    out = out.join(bb)
+    out["atr"] = ta.atr(out["high"], out["low"], out["close"], length=p.atr_length)
+    adx = ta.adx(out["high"], out["low"], out["close"], length=p.adx_length)
+    out["adx"] = adx[f"ADX_{p.adx_length}"]
+    # bb width
+    if all(col in out for col in ["BBU_20_2.0","BBL_20_2.0"]):
+        out["bb_width"] = (out["BBU_20_2.0"] - out["BBL_20_2.0"]) / out["close"]
+    else:
+        out["bb_width"] = None
+    # regime flags will be decided in signal engine using thresholds from config
+    return out
